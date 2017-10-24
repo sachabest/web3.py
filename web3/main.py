@@ -1,62 +1,70 @@
 from __future__ import absolute_import
 
 from eth_utils import (
-    to_wei,
+    apply_to_return_value,
+    add_0x_prefix,
+    encode_hex,
     from_wei,
     is_address,
     is_checksum_address,
+    keccak,
+    remove_0x_prefix,
     to_checksum_address,
-    decode_hex,
-    encode_hex,
-    force_text,
-    coerce_return_to_text,
-)
-
-from toolz.functoolz import (
-    compose,
+    to_wei,
 )
 
 from web3.admin import Admin
-from web3.db import Db
 from web3.eth import Eth
+from web3.iban import Iban
 from web3.miner import Miner
 from web3.net import Net
 from web3.personal import Personal
 from web3.shh import Shh
+from web3.testing import Testing
 from web3.txpool import TxPool
 from web3.version import Version
-from web3.testing import Testing
 
-from web3.iban import Iban
-
+from web3.providers.ipc import (
+    IPCProvider,
+)
 from web3.providers.rpc import (
     HTTPProvider,
-    RPCProvider,
-    KeepAliveRPCProvider,
 )
 from web3.providers.tester import (
     TestRPCProvider,
     EthereumTesterProvider,
 )
-from web3.providers.ipc import (
-    IPCProvider,
-)
-from web3.providers.manager import (
+
+from web3.manager import (
     RequestManager,
 )
 
 from web3.utils.encoding import (
+    hex_encode_abi_type,
+    to_bytes,
+    to_int,
     to_hex,
-    to_decimal,
-    from_decimal,
+    to_text,
 )
+
+
+def get_default_modules():
+    return {
+        "eth": Eth,
+        "shh": Shh,
+        "net": Net,
+        "personal": Personal,
+        "version": Version,
+        "txpool": TxPool,
+        "miner": Miner,
+        "admin": Admin,
+        "testing": Testing,
+    }
 
 
 class Web3(object):
     # Providers
     HTTPProvider = HTTPProvider
-    RPCProvider = RPCProvider
-    KeepAliveRPCProvider = KeepAliveRPCProvider
     IPCProvider = IPCProvider
     TestRPCProvider = TestRPCProvider
     EthereumTesterProvider = EthereumTesterProvider
@@ -68,13 +76,10 @@ class Web3(object):
     Iban = Iban
 
     # Encoding and Decoding
+    toBytes = staticmethod(to_bytes)
+    toInt = staticmethod(to_int)
     toHex = staticmethod(to_hex)
-    toAscii = staticmethod(decode_hex)
-    toUtf8 = staticmethod(compose(force_text, decode_hex))
-    fromAscii = staticmethod(encode_hex)
-    fromUtf8 = staticmethod(encode_hex)
-    toDecimal = staticmethod(to_decimal)
-    fromDecimal = staticmethod(from_decimal)
+    toText = staticmethod(to_text)
 
     # Currency Utility
     toWei = staticmethod(to_wei)
@@ -85,43 +90,65 @@ class Web3(object):
     isChecksumAddress = staticmethod(is_checksum_address)
     toChecksumAddress = staticmethod(to_checksum_address)
 
-    def __init__(self, provider):
-        self._requestManager = RequestManager(provider)
+    def __init__(self, providers, middlewares=None, modules=None):
+        self.manager = RequestManager(self, providers, middlewares)
 
-        self.eth = Eth(self)
-        self.db = Db(self)
-        self.shh = Shh(self)
-        self.net = Net(self)
-        self.personal = Personal(self)
-        self.version = Version(self)
-        self.txpool = TxPool(self)
-        self.miner = Miner(self)
-        self.admin = Admin(self)
-        self.testing = Testing(self)
+        if modules is None:
+            modules = get_default_modules()
 
-    def setProvider(self, provider):
-        self._requestManager.setProvider(provider)
-
-    def setManager(self, manager):
-        self._requestManager = manager
+        for module_name, module_class in modules.items():
+            module_class.attach(self, module_name)
 
     @property
-    def currentProvider(self):
-        return self._requestManager.provider
+    def middleware_stack(self):
+        return self.manager.middleware_stack
 
-    @coerce_return_to_text
-    def sha3(self, value, encoding="hex"):
-        if encoding == 'hex':
-            hex_string = value
-        else:
-            hex_string = encode_hex(value)
-        return self._requestManager.request_blocking('web3_sha3', [hex_string])
+    @property
+    def providers(self):
+        return self.manager.providers
+
+    def setProviders(self, providers):
+        self.manager.setProvider(providers)
+
+    @staticmethod
+    @apply_to_return_value(encode_hex)
+    def sha3(primitive=None, text=None, hexstr=None):
+        if isinstance(primitive, (bytes, int, type(None))):
+            input_bytes = to_bytes(primitive, hexstr=hexstr, text=text)
+            return keccak(input_bytes)
+
+        raise TypeError(
+            "You called sha3 with first arg %r and keywords %r. You must call it with one of "
+            "these approaches: sha3(text='txt'), sha3(hexstr='0x747874'), "
+            "sha3(b'\\x74\\x78\\x74'), or sha3(0x747874)." % (
+                primitive,
+                {'text': text, 'hexstr': hexstr}
+            )
+        )
+
+    @classmethod
+    def soliditySha3(cls, abi_types, values):
+        """
+        Executes sha3 (keccak256) exactly as Solidity does.
+        Takes list of abi_types as inputs -- `[uint24, int8[], bool]`
+        and list of corresponding values  -- `[20, [-1, 5, 0], True]`
+        """
+        if len(abi_types) != len(values):
+            raise ValueError(
+                "Length mismatch between provided abi types and values.  Got "
+                "{0} types and {1} values.".format(len(abi_types), len(values))
+            )
+
+        hex_string = add_0x_prefix(''.join(
+            remove_0x_prefix(hex_encode_abi_type(abi_type, value))
+            for abi_type, value
+            in zip(abi_types, values)
+        ))
+        return cls.sha3(hexstr=hex_string)
 
     def isConnected(self):
-        return self.currentProvider is not None and self.currentProvider.isConnected()
-
-    def createBatch(self):
-        raise NotImplementedError("Not Implemented")
-
-    def receive(self, requestid, timeout=0, keep=False):
-        return self._requestManager.receive(requestid, timeout, keep)
+        for provider in self.providers:
+            if provider.isConnected():
+                return True
+        else:
+            return False
