@@ -43,13 +43,13 @@ setup(
     install_requires=install_requires,
     setup_requires=['setuptools-markdown'],
     extras_require={
-        'tester': ["eth-testrpc>=1.2.0"],
+        'tester': ["eth-testrpc>=1.3.3"],
         'gevent': [
             "gevent>=1.1.1,<1.2.0",
             "geventhttpclient>=1.3.1",
         ],
     },
-    py_modules=['web3'],
+    py_modules=['web3', 'ens'],
     license="MIT",
     zip_safe=False,
     keywords='ethereum',

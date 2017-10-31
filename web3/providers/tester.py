@@ -4,9 +4,10 @@ from cytoolz.functoolz import (
 )
 
 from eth_utils import (
+    decode_hex,
+    force_obj_to_text,
     is_integer,
     is_string,
-    decode_hex,
 )
 
 from web3.middleware import (
@@ -39,15 +40,21 @@ def is_testrpc_available():
         return False
 
 
-to_integer_if_hex = apply_formatter_if(hex_to_integer, is_string)
+to_integer_if_hex = apply_formatter_if(is_string, hex_to_integer)
 
 
 TRANSACTION_FORMATTERS = {
     'to': apply_formatter_if(
-        static_return(None),
         compose(complement(bool), decode_hex),
+        static_return(None),
     ),
 }
+
+
+def ethtestrpc_string_middleware(make_request, web3):
+    def middleware(method, params):
+        return force_obj_to_text(make_request(method, params))
+    return middleware
 
 
 ethtestrpc_middleware = construct_formatting_middleware(
@@ -58,11 +65,11 @@ ethtestrpc_middleware = construct_formatting_middleware(
     },
     result_formatters={
         # Eth
-        'eth_newFilter': apply_formatter_if(hex, is_integer),
-        'eth_protocolVersion': apply_formatter_if(str, is_integer),
+        'eth_newFilter': apply_formatter_if(is_integer, hex),
+        'eth_protocolVersion': apply_formatter_if(is_integer, str),
         'eth_getTransactionByHash': apply_formatters_to_dict(TRANSACTION_FORMATTERS),
         # Net
-        'net_version': apply_formatter_if(str, is_integer),
+        'net_version': apply_formatter_if(is_integer, str),
     },
 )
 
@@ -90,6 +97,7 @@ def ethereum_tester_personal_remapper_middleware(make_request, web3):
 class EthereumTesterProvider(BaseProvider):
     middlewares = [
         ethtestrpc_middleware,
+        ethtestrpc_string_middleware,
         ethtestrpc_exception_middleware,
         ethereum_tester_personal_remapper_middleware,
     ]
