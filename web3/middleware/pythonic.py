@@ -95,7 +95,7 @@ def is_array_of_dicts(value):
 
 @curry
 def to_hexbytes(num_bytes, val, variable_length=False):
-    if isinstance(val, (str, int, bytes)):
+    if isinstance(val, (str, unicode, int, bytes)):
         result = HexBytes(val)
     else:
         raise TypeError("Cannot convert %r to HexBytes" % val)

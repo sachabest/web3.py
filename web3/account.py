@@ -148,12 +148,12 @@ class Account(object):
         key = self._keys.PrivateKey(key_bytes)
         (v, r, s, eth_signature_bytes) = sign_message_hash(key, msg_hash)
         return AttributeDict({
-            'message': HexBytes(msg_bytes),
+            'message': to_hex(msg_bytes),
             'messageHash': msg_hash,
-            'r': HexBytes(r),
-            's': HexBytes(s),
+            'r': to_hex(r),
+            's': to_hex(s),
             'v': v,
-            'signature': HexBytes(eth_signature_bytes),
+            'signature': to_hex(eth_signature_bytes),
         })
 
     def signTransaction(self, transaction_dict, private_key):
@@ -176,9 +176,9 @@ class Account(object):
         ) = sign_transaction_dict(account._key_obj, transaction_dict)
 
         return AttributeDict({
-            'rawTransaction': HexBytes(rlp_encoded),
-            'hash': HexBytes(transaction_hash),
-            'r': HexBytes(r),
-            's': HexBytes(s),
+            'rawTransaction': to_hex(rlp_encoded),
+            'hash': to_hex(transaction_hash),
+            'r': to_hex(r),
+            's': to_hex(s),
             'v': v,
         })
